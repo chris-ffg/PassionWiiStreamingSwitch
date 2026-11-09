@@ -8,6 +8,7 @@
 #include "ui/settings_screen.h"
 #include "media/favorites_manager.h"
 #include "network/http_client.h"
+#include "config.h"
 #include "app.h"
 #include "ui/ui_common.h"
 #include "utils/swkbd_helper.h"
