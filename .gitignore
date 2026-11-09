@@ -4,3 +4,6 @@ build/
 *.d
 *.zip
 *.log
+*.nro
+*.nacp
+

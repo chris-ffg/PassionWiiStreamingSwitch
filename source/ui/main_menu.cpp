@@ -154,35 +154,50 @@ void MainMenu::Render(SDL_Renderer* renderer) {
     int centerX = Layout::SCREEN_W / 2;
 
     // =====================================================
-    // HEADER: Dango icon + Title + Version
+    // HEADER: Official PassionWii Typography Logo + Switch Badge
     // =====================================================
-    int headerY = 60;
+    if (app->GetLogoTexture()) {
+        int logoW = 290;
+        int logoH = 103;
+        int logoX = centerX - logoW / 2;
+        int logoY = 20;
+        SDL_Rect logoDst = {logoX, logoY, logoW, logoH};
+        SDL_RenderCopy(renderer, app->GetLogoTexture(), nullptr, &logoDst);
 
-    // Dango icon (three colored circles on a stick)
-    UI::DrawDangoIcon(renderer, centerX - 210, headerY + 25, 14);
+        // Switch Edition pill badge
+        int badgeW = 230;
+        int badgeH = 22;
+        int badgeX = centerX - badgeW / 2;
+        int badgeY = logoY + logoH + 4;
+        UI::DrawRoundedRect(renderer, badgeX, badgeY, badgeW, badgeH, 10, {225, 20, 45, 240});
+        UI::DrawTextCentered(renderer, app->GetFontTiny(), "Nintendo Switch Edition",
+                             {badgeX, badgeY, badgeW, badgeH}, Colors::TEXT_PRIMARY);
 
-    // Title text
-    UI::DrawText(renderer, app->GetFontLarge(),
-                 "PassionWiiStreaming",
-                 centerX, headerY + 8, Colors::TEXT_PRIMARY, true, false);
+        // Subtle divider below header
+        UI::DrawDivider(renderer, Layout::MARGIN, badgeY + 28,
+                        Layout::SCREEN_W - Layout::MARGIN * 2);
+    } else {
+        int headerY = 50;
+        UI::DrawText(renderer, app->GetFontLarge(),
+                     "PassionWiiStreaming",
+                     centerX, headerY + 8, Colors::TEXT_PRIMARY, true, false);
 
-    // Version with subtle pulse animation
-    float pulse = 0.5f + 0.5f * sinf(titlePulse);
-    SDL_Color versionColor = UI::LerpColor(Colors::TEXT_DISABLED, Colors::DANGO_CREAM, pulse * 0.3f);
-    char versionStr[96];
-    snprintf(versionStr, sizeof(versionStr), "Nintendo Switch Edition v%s  —  Atmosphere", App::APP_VERSION);
-    UI::DrawText(renderer, app->GetFontTiny(),
-                 versionStr,
-                 centerX, headerY + 50, versionColor, true, false);
+        float pulse = 0.5f + 0.5f * sinf(titlePulse);
+        SDL_Color versionColor = UI::LerpColor(Colors::TEXT_DISABLED, Colors::DANGO_CREAM, pulse * 0.3f);
+        char versionStr[96];
+        snprintf(versionStr, sizeof(versionStr), "Nintendo Switch Edition v%s  —  Atmosphere", App::APP_VERSION);
+        UI::DrawText(renderer, app->GetFontTiny(),
+                     versionStr,
+                     centerX, headerY + 50, versionColor, true, false);
 
-    // Divider line below header
-    UI::DrawDivider(renderer, Layout::MARGIN, headerY + 78,
-                    Layout::SCREEN_W - Layout::MARGIN * 2);
+        UI::DrawDivider(renderer, Layout::MARGIN, headerY + 78,
+                        Layout::SCREEN_W - Layout::MARGIN * 2);
+    }
 
     // =====================================================
-    // MENU ITEMS
+    // MENU ITEMS (Translucent Frosted Glass)
     // =====================================================
-    int menuStartY = 175;
+    int menuStartY = 180;
     int itemWidth  = 640;
     int itemX      = (Layout::SCREEN_W - itemWidth) / 2;
 
@@ -191,12 +206,12 @@ void MainMenu::Render(SDL_Renderer* renderer) {
         float animY = menuStartY + selectionAnimY * (Layout::ITEM_HEIGHT + Layout::ITEM_SPACING);
         UI::DrawRoundedRect(renderer, itemX - 10, (int)animY - 4,
                             itemWidth + 20, Layout::ITEM_HEIGHT + 8,
-                            Layout::CORNER_RADIUS, Colors::BG_SELECTED);
+                            Layout::CORNER_RADIUS, {65, 65, 95, 210});
 
-        // Left accent bar (pink)
+        // Left accent bar (Switch Red)
         UI::DrawRoundedRect(renderer, itemX - 10, (int)animY,
                             4, Layout::ITEM_HEIGHT,
-                            2, Colors::DANGO_PINK);
+                            2, {235, 30, 55, 255});
     }
 
     // Render each menu item
@@ -204,16 +219,16 @@ void MainMenu::Render(SDL_Renderer* renderer) {
         int itemY = menuStartY + i * (Layout::ITEM_HEIGHT + Layout::ITEM_SPACING);
         bool isSelected = (i == selectedIndex);
 
-        // Item card background
-        SDL_Color bgColor = isSelected ? Colors::BG_SELECTED : Colors::BG_CARD;
+        // Item card background (translucent for background glow)
+        SDL_Color bgColor = isSelected ? SDL_Color{50, 50, 75, 200} : SDL_Color{30, 30, 48, 160};
         UI::DrawRoundedRect(renderer, itemX, itemY, itemWidth, Layout::ITEM_HEIGHT,
                             Layout::CORNER_RADIUS - 2, bgColor);
 
         // Item icon indicator (colored dot)
         SDL_Color dotColor;
         switch (i) {
-            case 0: dotColor = Colors::DANGO_ORANGE; break;  // Archivos — orange
-            case 1: dotColor = Colors::DANGO_PINK;   break;  // IPTV — pink
+            case 0: dotColor = Colors::DANGO_ORANGE; break;  // Streaming — orange
+            case 1: dotColor = Colors::DANGO_BLUE;   break;  // Archivos — blue
             case 2: dotColor = Colors::DANGO_CREAM;  break;  // Historial & Favs — cream
             case 3: dotColor = Colors::DANGO_GREEN;  break;  // Config — green
             default: dotColor = Colors::TEXT_SECONDARY; break;
@@ -245,18 +260,18 @@ void MainMenu::Render(SDL_Renderer* renderer) {
     int cardH = 82;
 
     UI::DrawRoundedRect(renderer, itemX, cardY, cardW, cardH,
-                        Layout::CORNER_RADIUS, Colors::BG_CARD);
+                        Layout::CORNER_RADIUS, {30, 30, 48, 160});
 
     UI::DrawText(renderer, app->GetFontSmall(),
-                 "Bienvenido a DangoPlayer Switch",
+                 "PassionWiiStreaming Switch Edition",
                  itemX + Layout::PADDING, cardY + 12, Colors::DANGO_CREAM, false, false);
 
     UI::DrawText(renderer, app->GetFontTiny(),
-                 "Reproductor de video e IPTV para Nintendo Switch.",
+                 "Catalogo oficial de peliculas, series, animes y doramas.",
                  itemX + Layout::PADDING, cardY + 38, Colors::TEXT_SECONDARY, false, false);
 
     UI::DrawText(renderer, app->GetFontTiny(),
-                 "Ejecutar en Title Override (R + juego) para RAM completa.",
+                 "Ejecutar en Title Override (R + juego) para maxima memoria y rendimiento.",
                  itemX + Layout::PADDING, cardY + 58, Colors::TEXT_DISABLED, false, false);
 
     // =====================================================

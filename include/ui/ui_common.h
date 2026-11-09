@@ -104,6 +104,7 @@ namespace UI {
     void DrawDangoIcon(SDL_Renderer* renderer, int centerX, int centerY, int radius);
 
     /// Vector icon helpers (independent of font/emojis, rendered with SDL2_gfx)
+    void DrawSwitchJoyconIcon(SDL_Renderer* renderer, int cx, int cy, int size);
     void DrawIconFolder(SDL_Renderer* renderer, int cx, int cy, int size, SDL_Color color);
     void DrawIconHome(SDL_Renderer* renderer, int cx, int cy, int size, SDL_Color color);
     void DrawIconTV(SDL_Renderer* renderer, int cx, int cy, int size, SDL_Color color);

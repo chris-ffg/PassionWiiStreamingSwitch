@@ -109,6 +109,14 @@ bool App::InitSDL() {
         Logger::Warn("Could not load romfs:/background.jpg: %s", IMG_GetError());
     }
 
+    // Load authentic PassionWii 3D stylized logo from romfs
+    logoTexture = IMG_LoadTexture(renderer, "romfs:/logo.png");
+    if (logoTexture) {
+        Logger::Info("Loaded logo texture from romfs:/logo.png");
+    } else {
+        Logger::Warn("Could not load romfs:/logo.png: %s", IMG_GetError());
+    }
+
     Logger::Info("SDL2 initialized: %dx%d, accelerated + vsync", SCREEN_W, SCREEN_H);
     return true;
 }
@@ -264,9 +272,10 @@ void App::Run() {
         SDL_RenderClear(renderer);
 
         if (bgTexture) {
+            // Draw softened cosmic background texture
             SDL_RenderCopy(renderer, bgTexture, nullptr, nullptr);
-            // Soft dark overlay to keep UI elements, text, and posters readable and vibrant
-            UI::DrawRect(renderer, 0, 0, SCREEN_W, SCREEN_H, {10, 10, 16, 175});
+            // Delicate translucent dark veil for crisp contrast without saturating
+            UI::DrawRect(renderer, 0, 0, SCREEN_W, SCREEN_H, {10, 8, 18, 70});
         }
 
         if (!screenStack.empty()) {
@@ -293,10 +302,14 @@ void App::Shutdown() {
     // Save user config
     Config::Instance().Save();
 
-    // Destroy background texture
+    // Destroy background & logo textures
     if (bgTexture) {
         SDL_DestroyTexture(bgTexture);
         bgTexture = nullptr;
+    }
+    if (logoTexture) {
+        SDL_DestroyTexture(logoTexture);
+        logoTexture = nullptr;
     }
 
     // Close fonts

@@ -46,6 +46,7 @@ public:
     bool          IsDocked() const { return isDocked; }
     void          Quit() { running = false; }
     SDL_Texture*  GetBackgroundTexture() const { return bgTexture; }
+    SDL_Texture*  GetLogoTexture() const { return logoTexture; }
 
     // App metadata
     static constexpr const char* APP_NAME    = "PassionWiiStreaming Switch Edition";
@@ -57,9 +58,10 @@ private:
     bool InitSDL();
     bool LoadFonts();
 
-    SDL_Window*   window    = nullptr;
-    SDL_Renderer* renderer  = nullptr;
-    SDL_Texture*  bgTexture = nullptr;
+    SDL_Window*   window      = nullptr;
+    SDL_Renderer* renderer    = nullptr;
+    SDL_Texture*  bgTexture   = nullptr;
+    SDL_Texture*  logoTexture = nullptr;
 
     // Fonts at different sizes (loaded from the same TTF file)
     TTF_Font* fontLarge  = nullptr;  // 36pt — titles

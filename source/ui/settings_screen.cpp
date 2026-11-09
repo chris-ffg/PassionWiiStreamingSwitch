@@ -40,7 +40,7 @@ void SettingsScreen::RefreshOptions() {
     options.push_back({
         "Tema visual",
         "Esquema de colores de la interfaz de usuario",
-        cfg.themeIndex == 0 ? "Dango Oscuro" : "Medianoche"
+        cfg.themeIndex == 0 ? "Passion Oscuro" : "Medianoche"
     });
 
     // 4. System Info (Read-only)
@@ -67,7 +67,7 @@ void SettingsScreen::ChangeSetting(int index, int direction) {
 
         case 2: // Theme
             cfg.themeIndex = (cfg.themeIndex + 1) % 2;
-            toast.Show(cfg.themeIndex == 0 ? "Tema: Dango Oscuro" : "Tema: Medianoche", 1.2f);
+            toast.Show(cfg.themeIndex == 0 ? "Tema: Passion Oscuro" : "Tema: Medianoche", 1.2f);
             break;
 
         case 3:

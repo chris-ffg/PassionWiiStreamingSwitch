@@ -158,8 +158,15 @@ void IPTVBrowser::RenderLoadingFrame(const std::string& message) {
     SDL_Renderer* renderer = app->GetRenderer();
     if (!renderer) return;
 
-    UI::SetColor(renderer, Colors::BG_DARK);
+    SDL_SetRenderDrawColor(renderer, Colors::BG_DARK.r, Colors::BG_DARK.g, Colors::BG_DARK.b, 255);
     SDL_RenderClear(renderer);
+
+    SDL_Texture* bg = app->GetBackgroundTexture();
+    if (bg) {
+        SDL_RenderCopy(renderer, bg, nullptr, nullptr);
+        UI::DrawRect(renderer, 0, 0, Layout::SCREEN_W, Layout::SCREEN_H, {10, 8, 18, 70});
+    }
+
     Render(renderer);
     toast.Show(message, 3.0f);
     toast.Render(renderer, app->GetFontSmall());
@@ -264,14 +271,10 @@ void IPTVBrowser::NavigateToFolder(const ChannelItem& ch) {
 // ============================================================================
 
 void IPTVBrowser::HandleInput(u64 kDown, u64 kHeld) {
-    if (showPlaylistsView) {
-        HandlePlaylistsInput(kDown);
+    if (focusZone == FocusZone::Sidebar) {
+        HandleSidebarInput(kDown);
     } else {
-        if (focusZone == FocusZone::Sidebar) {
-            HandleSidebarInput(kDown);
-        } else {
-            HandleShelfInput(kDown);
-        }
+        HandleShelfInput(kDown);
     }
 }
 
@@ -290,7 +293,8 @@ void IPTVBrowser::HandleSidebarInput(u64 kDown) {
     if (kDown & HidNpadButton_A) {
         switch ((SidebarItem)sidebarIndex) {
             case SidebarItem::Home:
-                showPlaylistsView = true;
+                // Dedicated App: Home button always returns directly to Main Menu
+                app->PopScreen();
                 break;
             case SidebarItem::IPTV:
                 focusZone = FocusZone::Shelf;
@@ -313,11 +317,8 @@ void IPTVBrowser::HandleSidebarInput(u64 kDown) {
     }
 
     if (kDown & HidNpadButton_B) {
-        if (isSubFolder) {
-            app->PopScreen();
-        } else {
-            showPlaylistsView = true;
-        }
+        // Dedicated App: [B] button always pops (returns to parent folder or Main Menu)
+        app->PopScreen();
     }
 }
 
@@ -380,14 +381,9 @@ void IPTVBrowser::HandleShelfInput(u64 kDown) {
         PromptSearch();
     }
 
-    // Return back [B] — Stack POP vs Show Playlists
+    // Return back [B] — Stack POP to parent directory or Main Menu
     if (kDown & HidNpadButton_B) {
-        if (isSubFolder) {
-            // Stack POP: returns to parent directory preserving parent scroll & focus
-            app->PopScreen();
-        } else {
-            showPlaylistsView = true;
-        }
+        app->PopScreen();
     }
 }
 
@@ -434,41 +430,6 @@ void IPTVBrowser::HandlePlaylistsInput(u64 kDown) {
 // ============================================================================
 
 void IPTVBrowser::HandleTouch(const TouchEvent& touch) {
-    if (showPlaylistsView) {
-        if (touch.type != TouchEvent::Down) return;
-
-        // Back button
-        if (touch.x >= Layout::MARGIN && touch.x <= Layout::MARGIN + 120 &&
-            touch.y >= 30 && touch.y <= 85) {
-            app->PopScreen();
-            return;
-        }
-
-        int startY = 120;
-        int rowH = 74;
-        int rowGap = 8;
-        int listW = Layout::SCREEN_W - Layout::MARGIN * 2;
-        const auto& saved = PlaylistManager::Instance().GetSaved();
-        int total = 2 + (int)saved.size();
-
-        for (int i = 0; i < total; i++) {
-            int y = startY + i * (rowH + rowGap);
-            if (touch.x >= Layout::MARGIN && touch.x <= Layout::MARGIN + listW &&
-                touch.y >= y && touch.y <= y + rowH) {
-                playlistIndex = i;
-                if (i == 0) {
-                    PromptAddUrl();
-                } else if (i == 1) {
-                    app->PushScreen(std::make_unique<FileBrowser>(app, "sdmc:/"));
-                } else {
-                    LoadPlaylist(saved[i - 2].pathOrUrl);
-                }
-                return;
-            }
-        }
-        return;
-    }
-
     // Touch on Sidebar Rail (X: 0 to SIDEBAR_W)
     if (touch.x < SIDEBAR_W) {
         if (touch.type != TouchEvent::Down) return;
@@ -479,7 +440,10 @@ void IPTVBrowser::HandleTouch(const TouchEvent& touch) {
             if (touch.y >= y && touch.y <= y + btnH) {
                 sidebarIndex = i;
                 focusZone = FocusZone::Sidebar;
-                if (i == 0) showPlaylistsView = true;
+                if (i == 0) {
+                    app->PopScreen();
+                    return;
+                }
                 else if (i == 1) focusZone = FocusZone::Shelf;
                 else if (i == 2) { CycleGroup(+1); focusZone = FocusZone::Shelf; }
                 else if (i == 3) { PromptSearch(); focusZone = FocusZone::Shelf; }
@@ -494,10 +458,9 @@ void IPTVBrowser::HandleTouch(const TouchEvent& touch) {
     if (touch.y <= 74) {
         if (touch.type != TouchEvent::Down) return;
 
-        // Back button
+        // Back button: Always pops to parent folder or Main Menu
         if (touch.x >= SIDEBAR_W + 10 && touch.x <= SIDEBAR_W + 110) {
-            if (isSubFolder) app->PopScreen();
-            else showPlaylistsView = true;
+            app->PopScreen();
             return;
         }
 
@@ -573,12 +536,8 @@ void IPTVBrowser::Update(float dt) {
 // ============================================================================
 
 void IPTVBrowser::Render(SDL_Renderer* renderer) {
-    if (showPlaylistsView) {
-        RenderPlaylistsView(renderer);
-    } else {
-        RenderSidebar(renderer);
-        RenderShelfView(renderer);
-    }
+    RenderSidebar(renderer);
+    RenderShelfView(renderer);
     toast.Render(renderer, app->GetFontSmall());
 }
 
@@ -587,16 +546,16 @@ void IPTVBrowser::Render(SDL_Renderer* renderer) {
 // ============================================================================
 
 void IPTVBrowser::RenderSidebar(SDL_Renderer* renderer) {
-    // Sidebar background panel
-    UI::DrawRect(renderer, 0, 0, SIDEBAR_W, Layout::SCREEN_H, Colors::BG_CARD);
+    // Sidebar background panel (soft translucent dark veil)
+    UI::DrawRect(renderer, 0, 0, SIDEBAR_W, Layout::SCREEN_H, {20, 20, 34, 215});
     UI::DrawDivider(renderer, SIDEBAR_W - 1, 0, 1); // Vertical separator
 
-    // Logo / Brand Icon at top (Dango on a stick)
+    // Logo / Brand Icon at top (Switch Joy-Con logo)
     UI::DrawRoundedRect(renderer, 24, 20, 48, 48, 12, Colors::BG_SELECTED);
-    UI::DrawDangoIcon(renderer, 48, 44, 7);
+    UI::DrawSwitchJoyconIcon(renderer, 48, 44, 18);
 
     static const char* navLabels[5] = {
-        "Inicio", "IPTV", "Favoritos", "Buscar", "Ajustes"
+        "Inicio", "Catalogo", "Favoritos", "Buscar", "Ajustes"
     };
 
     int startY = 100;
@@ -652,7 +611,7 @@ void IPTVBrowser::RenderShelfView(SDL_Renderer* renderer) {
     UI::DrawRoundedRect(renderer, headerX + 8, headerY + 9, 24, 24, 6, Colors::DANGO_PINK);
     UI::DrawText(renderer, app->GetFontTiny(), "B",
                  headerX + 20, headerY + 12, Colors::TEXT_PRIMARY, true, false);
-    UI::DrawText(renderer, app->GetFontSmall(), isSubFolder ? "Atras" : "Listas",
+    UI::DrawText(renderer, app->GetFontSmall(), isSubFolder ? "Atras" : "Inicio",
                  headerX + 38, headerY + 11, Colors::TEXT_SECONDARY, false, false);
 
     // Title / Breadcrumbs

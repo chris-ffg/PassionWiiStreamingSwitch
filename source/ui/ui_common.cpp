@@ -13,6 +13,11 @@ namespace UI {
 // ============================================================================
 
 void SetColor(SDL_Renderer* renderer, SDL_Color color) {
+    if (color.a < 255) {
+        SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+    } else {
+        SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+    }
     SDL_SetRenderDrawColor(renderer, color.r, color.g, color.b, color.a);
 }
 
@@ -138,6 +143,27 @@ void DrawDangoIcon(SDL_Renderer* renderer, int centerX, int centerY, int radius)
 // ============================================================================
 // Vector Icon Drawing Helpers (independent of font emojis)
 // ============================================================================
+
+void DrawSwitchJoyconIcon(SDL_Renderer* renderer, int cx, int cy, int size) {
+    int w = size;
+    int h = (int)(size * 1.35f);
+    int pad = std::max(2, (int)(size * 0.1f));
+    int jw = (w - pad) / 2;
+
+    // Left Joy-Con (Neon Blue)
+    int lx = cx - w / 2;
+    int ly = cy - h / 2;
+    roundedBoxRGBA(renderer, lx, ly, lx + jw, ly + h, 4, 0, 180, 245, 255);
+    // Stick dot
+    filledCircleRGBA(renderer, lx + jw / 2, ly + h / 3, 3, 255, 255, 255, 220);
+
+    // Right Joy-Con (Neon Red)
+    int rx = cx + pad / 2;
+    int ry = cy - h / 2;
+    roundedBoxRGBA(renderer, rx, ry, rx + jw, ry + h, 4, 245, 45, 65, 255);
+    // Buttons dot
+    filledCircleRGBA(renderer, rx + jw / 2, ly + 2 * h / 3, 3, 255, 255, 255, 220);
+}
 
 void DrawIconFolder(SDL_Renderer* renderer, int cx, int cy, int size, SDL_Color color) {
     int w = size;
