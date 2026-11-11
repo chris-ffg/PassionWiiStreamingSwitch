@@ -34,12 +34,14 @@ private:
     void RenderBottomBar(SDL_Renderer* renderer);
     void RenderOSD(SDL_Renderer* renderer);
     void RenderTrackModal(SDL_Renderer* renderer);
+    void ApplyModalSelection();
 
     App* app;
     ProgressBar seekBar;
     Toast toast;
 
     bool visible = true;
+    bool isDraggingSeek = false;
     float autoHideTimer = 3.5f;
     float alpha = 1.0f;
 
@@ -53,4 +55,6 @@ private:
     int modalSelectedIndex = 0;
 
     static constexpr float AUTO_HIDE_DELAY = 3.5f;
+    static constexpr int BOTTOM_BAR_H = 120;
+    static constexpr int SEEK_BAR_Y   = Layout::SCREEN_H - BOTTOM_BAR_H + 46; // 646: cleanly below timecode, above hints
 };

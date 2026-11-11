@@ -78,8 +78,8 @@ void MainMenu::HandleInput(u64 kDown, u64 kHeld) {
 void MainMenu::HandleTouch(const TouchEvent& touch) {
     if (touch.type != TouchEvent::Down) return;
 
-    int menuStartY = 220;
-    int itemWidth  = 620;
+    int menuStartY = 180;
+    int itemWidth  = 640;
     int itemX      = (Layout::SCREEN_W - itemWidth) / 2;
 
     // Check menu item clicks

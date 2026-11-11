@@ -4,6 +4,7 @@
 
 #include "ui/history_screen.h"
 #include "ui/player_screen.h"
+#include "ui/iptv_browser.h"
 #include "app.h"
 #include "ui/ui_common.h"
 #include "utils/string_utils.h"
@@ -11,7 +12,33 @@
 #include <algorithm>
 #include <cstdio>
 
-HistoryScreen::HistoryScreen(App* app) : Screen(app) {}
+HistoryScreen::HistoryScreen(App* app, int initialTab)
+    : Screen(app), activeTab(std::clamp(initialTab, 0, 1)) {}
+
+namespace {
+bool IsPlaylistFolderFavorite(const FavoriteItem& f) {
+    bool isHttp = (f.pathOrUrl.rfind("http://", 0) == 0 || f.pathOrUrl.rfind("https://", 0) == 0);
+    std::string ext = StringUtils::ToLower(StringUtils::GetExtension(f.pathOrUrl));
+    return (!f.isStream && isHttp) || ext == ".m3u";
+}
+
+void ActivateEntry(App* app, int activeTab, int index) {
+    if (activeTab == 0) {
+        const auto& h = HistoryManager::Instance().GetEntries()[index];
+        Logger::Info("HistoryScreen: Resuming from history -> %s", h.pathOrUrl.c_str());
+        app->PushScreen(std::make_unique<PlayerScreen>(app, h.pathOrUrl, h.title));
+    } else {
+        const auto& f = FavoritesManager::Instance().GetFavorites()[index];
+        if (IsPlaylistFolderFavorite(f)) {
+            Logger::Info("HistoryScreen: Opening favorite folder -> %s", f.pathOrUrl.c_str());
+            app->PushScreen(std::make_unique<IPTVBrowser>(app, f.pathOrUrl));
+        } else {
+            Logger::Info("HistoryScreen: Playing favorite -> %s", f.pathOrUrl.c_str());
+            app->PushScreen(std::make_unique<PlayerScreen>(app, f.pathOrUrl, f.title));
+        }
+    }
+}
+} // namespace
 
 void HistoryScreen::OnEnter() {
     Logger::Info("HistoryScreen: OnEnter");
@@ -57,15 +84,7 @@ void HistoryScreen::HandleInput(u64 kDown, u64 kHeld) {
     // Play item [A]
     if (kDown & HidNpadButton_A) {
         if (total > 0 && selectedIndex >= 0 && selectedIndex < total) {
-            if (activeTab == 0) {
-                const auto& h = HistoryManager::Instance().GetEntries()[selectedIndex];
-                Logger::Info("HistoryScreen: Resuming from history -> %s", h.pathOrUrl.c_str());
-                app->PushScreen(std::make_unique<PlayerScreen>(app, h.pathOrUrl, h.title));
-            } else {
-                const auto& f = FavoritesManager::Instance().GetFavorites()[selectedIndex];
-                Logger::Info("HistoryScreen: Playing favorite -> %s", f.pathOrUrl.c_str());
-                app->PushScreen(std::make_unique<PlayerScreen>(app, f.pathOrUrl, f.title));
-            }
+            ActivateEntry(app, activeTab, selectedIndex);
         }
     }
 
@@ -133,13 +152,7 @@ void HistoryScreen::HandleTouch(const TouchEvent& touch) {
         if (touch.x >= Layout::MARGIN && touch.x <= Layout::SCREEN_W - Layout::MARGIN &&
             touch.y >= y && touch.y <= y + ITEM_H) {
             selectedIndex = idx;
-            if (activeTab == 0) {
-                const auto& ent = HistoryManager::Instance().GetEntries()[idx];
-                app->PushScreen(std::make_unique<PlayerScreen>(app, ent.pathOrUrl, ent.title));
-            } else {
-                const auto& fav = FavoritesManager::Instance().GetFavorites()[idx];
-                app->PushScreen(std::make_unique<PlayerScreen>(app, fav.pathOrUrl, fav.title));
-            }
+            ActivateEntry(app, activeTab, idx);
             return;
         }
     }
@@ -157,7 +170,7 @@ void HistoryScreen::Render(SDL_Renderer* renderer) {
     UI::DrawRoundedRect(renderer, Layout::MARGIN + 8, headerY + 10, 24, 24, 6, Colors::DANGO_PINK);
     UI::DrawText(renderer, app->GetFontTiny(), "B",
                  Layout::MARGIN + 20, headerY + 13, Colors::TEXT_PRIMARY, true, false);
-    UI::DrawText(renderer, app->GetFontSmall(), "Menu",
+    UI::DrawText(renderer, app->GetFontSmall(), "Atras",
                  Layout::MARGIN + 38, headerY + 12, Colors::TEXT_SECONDARY, false, false);
 
     // Title

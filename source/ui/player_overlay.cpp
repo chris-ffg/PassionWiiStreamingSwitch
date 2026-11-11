@@ -11,10 +11,9 @@
 #include <cstdio>
 
 PlayerOverlay::PlayerOverlay(App* app) : app(app) {
-    // Configure seek bar
-    int seekY = Layout::SCREEN_H - Layout::FOOTER_H - 36;
+    // Configure seek bar aligned with BOTTOM_BAR_H (cleanly below timecode)
     int seekW = Layout::SCREEN_W - Layout::MARGIN * 2;
-    seekBar.SetBounds(Layout::MARGIN, seekY, seekW, 10);
+    seekBar.SetBounds(Layout::MARGIN, SEEK_BAR_Y, seekW, 10);
     seekBar.SetColors({70, 70, 90, 220}, Colors::DANGO_PINK, Colors::DANGO_CREAM);
 }
 
@@ -26,6 +25,8 @@ void PlayerOverlay::Show() {
 void PlayerOverlay::Hide() {
     if (!modalOpen) {
         visible = false;
+        isDraggingSeek = false;
+        seekBar.SetDragging(false);
     }
 }
 
@@ -49,8 +50,8 @@ void PlayerOverlay::Update(float dt) {
         osdTimer -= dt;
     }
 
-    // Auto-hide handling
-    if (visible && !modalOpen && MediaPlayer::Instance().IsPlaying()) {
+    // Auto-hide handling (inhibited while modal is open or user is scrubbing the seek bar)
+    if (visible && !modalOpen && !isDraggingSeek && MediaPlayer::Instance().IsPlaying()) {
         autoHideTimer -= dt;
         if (autoHideTimer <= 0.0f) {
             visible = false;
@@ -61,31 +62,89 @@ void PlayerOverlay::Update(float dt) {
     float targetAlpha = visible ? 1.0f : 0.0f;
     alpha += (targetAlpha - alpha) * dt * 8.0f;
 
-    // Keep seek bar progress synchronized
-    if (!modalOpen) {
+    // Keep seek bar progress synchronized unless user is actively dragging it
+    if (!modalOpen && !isDraggingSeek) {
         seekBar.SetProgress(MediaPlayer::Instance().GetProgress());
     }
+    seekBar.SetDragging(isDraggingSeek);
+}
+
+void PlayerOverlay::ApplyModalSelection() {
+    auto& player = MediaPlayer::Instance();
+    const auto& meta = player.GetMetadata();
+
+    if (modalTrackType == TrackType::Audio) {
+        if (modalSelectedIndex >= 0 && modalSelectedIndex < (int)meta.audioTracks.size()) {
+            player.SetAudioTrack(meta.audioTracks[modalSelectedIndex].id);
+            ShowOSD("Audio: " + meta.audioTracks[modalSelectedIndex].language);
+        }
+    } else {
+        if (modalSelectedIndex == 0) {
+            player.SetSubtitleTrack(0); // Subtitle off
+            ShowOSD("Subtitulos: Desactivados");
+        } else {
+            int subIdx = modalSelectedIndex - 1;
+            if (subIdx >= 0 && subIdx < (int)meta.subtitleTracks.size()) {
+                player.SetSubtitleTrack(meta.subtitleTracks[subIdx].id);
+                ShowOSD("Subtitulos: " + meta.subtitleTracks[subIdx].language);
+            }
+        }
+    }
+    modalOpen = false;
+    autoHideTimer = AUTO_HIDE_DELAY;
 }
 
 void PlayerOverlay::HandleInput(u64 kDown, u64 kHeld) {
+    (void)kHeld;
     if (!kDown) return; // Do not reset auto-hide on empty frames
 
     auto& player = MediaPlayer::Instance();
 
-    // If overlay is hidden, any button press wakes it up
+    // =====================================================
+    // Track Modal Navigation (ALWAYS handled before player exit!)
+    // =====================================================
+    if (modalOpen) {
+        autoHideTimer = AUTO_HIDE_DELAY;
+        const auto& meta = player.GetMetadata();
+        int count = (modalTrackType == TrackType::Audio)
+                    ? (int)meta.audioTracks.size()
+                    : (int)meta.subtitleTracks.size() + 1; // +1 for "Desactivados"
+
+        if (count > 0) {
+            if (kDown & HidNpadButton_AnyDown) {
+                modalSelectedIndex = (modalSelectedIndex + 1) % count;
+            }
+            if (kDown & HidNpadButton_AnyUp) {
+                modalSelectedIndex = (modalSelectedIndex - 1 + count) % count;
+            }
+            if (kDown & HidNpadButton_A) {
+                ApplyModalSelection();
+                return;
+            }
+        }
+
+        // [B] closes modal ONLY — never exits player
+        if (kDown & (HidNpadButton_B | HidNpadButton_X | HidNpadButton_Y)) {
+            modalOpen = false;
+        }
+        return;
+    }
+
+    // If overlay is hidden, [B] exits player and any other button wakes HUD
     if (!visible) {
-        Show();
         if (kDown & HidNpadButton_B) {
             player.Stop();
             app->PopScreen();
+            return;
         }
+        Show();
         return;
     }
 
     // Reset auto-hide on any active button press
     autoHideTimer = AUTO_HIDE_DELAY;
 
-    // [B] Exit Player
+    // [B] Exit Player (only when modal is closed)
     if (kDown & HidNpadButton_B) {
         player.Stop();
         app->PopScreen();
@@ -99,53 +158,9 @@ void PlayerOverlay::HandleInput(u64 kDown, u64 kHeld) {
         return;
     }
 
-    // [Minus] or [Stick click] can also hide controls immediately
+    // [Minus] or [Stick click] can hide controls immediately
     if (kDown & (HidNpadButton_Minus | HidNpadButton_StickL | HidNpadButton_StickR)) {
         Hide();
-        return;
-    }
-
-    // =====================================================
-    // Track Modal Navigation
-    // =====================================================
-    if (modalOpen) {
-        const auto& meta = player.GetMetadata();
-        const auto& trackList = (modalTrackType == TrackType::Audio)
-                                ? meta.audioTracks
-                                : meta.subtitleTracks;
-        int count = (int)trackList.size() + 1; // +1 for "Off" option in subtitles
-
-        if (kDown & HidNpadButton_AnyDown) {
-            modalSelectedIndex = (modalSelectedIndex + 1) % count;
-        }
-        if (kDown & HidNpadButton_AnyUp) {
-            modalSelectedIndex = (modalSelectedIndex - 1 + count) % count;
-        }
-
-        if (kDown & HidNpadButton_A) {
-            if (modalTrackType == TrackType::Audio) {
-                if (modalSelectedIndex >= 0 && modalSelectedIndex < (int)meta.audioTracks.size()) {
-                    player.SetAudioTrack(meta.audioTracks[modalSelectedIndex].id);
-                    ShowOSD("Audio: " + meta.audioTracks[modalSelectedIndex].language);
-                }
-            } else {
-                if (modalSelectedIndex == 0) {
-                    player.SetSubtitleTrack(0); // Subtitle off
-                    ShowOSD("Subtitulos: Desactivados");
-                } else {
-                    int subIdx = modalSelectedIndex - 1;
-                    if (subIdx >= 0 && subIdx < (int)meta.subtitleTracks.size()) {
-                        player.SetSubtitleTrack(meta.subtitleTracks[subIdx].id);
-                        ShowOSD("Subtitulos: " + meta.subtitleTracks[subIdx].language);
-                    }
-                }
-            }
-            modalOpen = false;
-        }
-
-        if (kDown & HidNpadButton_B) {
-            modalOpen = false;
-        }
         return;
     }
 
@@ -202,28 +217,68 @@ void PlayerOverlay::HandleInput(u64 kDown, u64 kHeld) {
         modalSelectedIndex = 0;
         modalOpen = true;
     }
-
-    // Exit Player [B]
-    if (kDown & HidNpadButton_B) {
-        player.Stop();
-        app->PopScreen();
-    }
 }
 
 bool PlayerOverlay::HandleTouch(const TouchEvent& touch) {
-    if (touch.type != TouchEvent::Down) {
-        if (seekBar.HandleTouch(touch.x, touch.y)) {
-            if (touch.type == TouchEvent::Up) {
-                MediaPlayer::Instance().SeekPercent(seekBar.GetProgress());
-            }
+    // Active seek bar drag capture: works even if finger drifts vertically while sliding!
+    if (isDraggingSeek) {
+        if (touch.type == TouchEvent::Motion) {
+            seekBar.UpdateFromX(touch.x);
+            autoHideTimer = AUTO_HIDE_DELAY;
             return true;
         }
+        if (touch.type == TouchEvent::Up) {
+            seekBar.UpdateFromX(touch.x);
+            MediaPlayer::Instance().SeekPercent(seekBar.GetProgress());
+            isDraggingSeek = false;
+            seekBar.SetDragging(false);
+            autoHideTimer = AUTO_HIDE_DELAY;
+            return true;
+        }
+        if (touch.type == TouchEvent::Down) {
+            seekBar.UpdateFromX(touch.x);
+            autoHideTimer = AUTO_HIDE_DELAY;
+            return true;
+        }
+    }
+
+    if (touch.type != TouchEvent::Down) {
         return false;
     }
 
-    // Touch down event
+    // Modal open: handle track row tap or outside-to-dismiss
     if (modalOpen) {
-        modalOpen = false;
+        int modalW = 500;
+        int modalH = 340;
+        int modalX = (Layout::SCREEN_W - modalW) / 2;
+        int modalY = (Layout::SCREEN_H - modalH) / 2;
+
+        if (touch.x < modalX || touch.x > modalX + modalW ||
+            touch.y < modalY || touch.y > modalY + modalH) {
+            modalOpen = false;
+            autoHideTimer = AUTO_HIDE_DELAY;
+            return true;
+        }
+
+        const auto& meta = MediaPlayer::Instance().GetMetadata();
+        int totalRows = (modalTrackType == TrackType::Audio)
+                        ? (int)meta.audioTracks.size()
+                        : (int)meta.subtitleTracks.size() + 1;
+        int startY = modalY + 80;
+        int itemH = 44;
+        int maxVisible = 4;
+        int scrollOff = (modalSelectedIndex >= maxVisible) ? (modalSelectedIndex - maxVisible + 1) : 0;
+        int visibleEnd = std::min(totalRows, scrollOff + maxVisible);
+        for (int i = scrollOff; i < visibleEnd; i++) {
+            int row = i - scrollOff;
+            int rowY = startY + row * (itemH + 8);
+            if (touch.x >= modalX + 30 && touch.x <= modalX + modalW - 30 &&
+                touch.y >= rowY && touch.y <= rowY + itemH) {
+                modalSelectedIndex = i;
+                ApplyModalSelection();
+                return true;
+            }
+        }
         return true;
     }
 
@@ -253,41 +308,41 @@ bool PlayerOverlay::HandleTouch(const TouchEvent& touch) {
         return true;
     }
 
-    // Interactive Zone: Seek bar
-    int seekY = Layout::SCREEN_H - Layout::FOOTER_H - 36;
-    if (touch.y >= seekY - 18 && touch.y <= seekY + 28) {
-        if (seekBar.HandleTouch(touch.x, touch.y)) {
-            MediaPlayer::Instance().SeekPercent(seekBar.GetProgress());
-            autoHideTimer = AUTO_HIDE_DELAY;
-            return true;
-        }
+    // Interactive Zone: Seek bar (Supports both quick tap-and-release AND drag-and-drop)
+    if (seekBar.ContainsPoint(touch.x, touch.y, 20, 24)) {
+        isDraggingSeek = true;
+        seekBar.SetDragging(true);
+        seekBar.UpdateFromX(touch.x);
+        autoHideTimer = AUTO_HIDE_DELAY;
+        return true;
     }
 
     // Interactive Zone: Bottom action bar buttons
-    if (touch.y >= Layout::SCREEN_H - 55 && touch.y <= Layout::SCREEN_H - 5) {
+    int bottomY = Layout::SCREEN_H - BOTTOM_BAR_H;
+    if (touch.y >= bottomY + 70 && touch.y <= Layout::SCREEN_H) {
         // Play / Pause
-        if (touch.x >= Layout::MARGIN && touch.x <= Layout::MARGIN + 140) {
+        if (touch.x >= Layout::MARGIN && touch.x <= Layout::MARGIN + 150) {
             MediaPlayer::Instance().TogglePause();
             ShowOSD(MediaPlayer::Instance().IsPaused() ? "Pausa" : "Reproduciendo");
             autoHideTimer = AUTO_HIDE_DELAY;
             return true;
         }
         // Audio modal
-        if (touch.x >= Layout::MARGIN + 150 && touch.x <= Layout::MARGIN + 255) {
+        if (touch.x >= Layout::MARGIN + 155 && touch.x <= Layout::MARGIN + 265) {
             modalTrackType = TrackType::Audio;
             modalSelectedIndex = 0;
             modalOpen = true;
             return true;
         }
         // Subtitles modal
-        if (touch.x >= Layout::MARGIN + 260 && touch.x <= Layout::MARGIN + 380) {
+        if (touch.x >= Layout::MARGIN + 268 && touch.x <= Layout::MARGIN + 390) {
             modalTrackType = TrackType::Subtitle;
             modalSelectedIndex = 0;
             modalOpen = true;
             return true;
         }
         // Rotation button
-        if (touch.x >= Layout::MARGIN + 385 && touch.x <= Layout::MARGIN + 540) {
+        if (touch.x >= Layout::MARGIN + 392 && touch.x <= Layout::MARGIN + 560) {
             MediaPlayer::Instance().CycleRotation();
             ShowOSD("Rotacion: " + std::to_string(MediaPlayer::Instance().GetRotation()) + "°");
             autoHideTimer = AUTO_HIDE_DELAY;
@@ -373,26 +428,39 @@ void PlayerOverlay::RenderTopBar(SDL_Renderer* renderer) {
 }
 
 void PlayerOverlay::RenderBottomBar(SDL_Renderer* renderer) {
-    int bottomH = 110;
-    int bottomY = Layout::SCREEN_H - bottomH;
+    int bottomY = Layout::SCREEN_H - BOTTOM_BAR_H;
     Uint8 a = (Uint8)(alpha * 220.0f);
 
     // Darkened bottom overlay
-    UI::DrawRect(renderer, 0, bottomY, Layout::SCREEN_W, bottomH, {18, 18, 28, a});
+    UI::DrawRect(renderer, 0, bottomY, Layout::SCREEN_W, BOTTOM_BAR_H, {18, 18, 28, a});
 
-    // Time texts (Position & Duration)
-    double pos = MediaPlayer::Instance().GetPosition();
+    // Time texts (Preview scrubbed target while dragging, or live playback position)
     double dur = MediaPlayer::Instance().GetDuration();
+    double pos = isDraggingSeek ? (dur * seekBar.GetProgress()) : MediaPlayer::Instance().GetPosition();
 
     std::string timeStr = StringUtils::FormatTime(pos) + " / " + StringUtils::FormatTime(dur);
+    SDL_Color timeCol = isDraggingSeek ? Colors::DANGO_CREAM : Colors::TEXT_SECONDARY;
     UI::DrawText(renderer, app->GetFontSmall(), timeStr,
-                 Layout::MARGIN, bottomY + 12, Colors::TEXT_SECONDARY, false, false);
+                 Layout::MARGIN, bottomY + 10, timeCol, false, false);
 
-    // Render interactive seek bar
+    // Render interactive seek bar (positioned cleanly below timecode with ample clearance)
     seekBar.Render(renderer);
 
+    // Floating preview time tooltip above knob while user drags the progress marker
+    if (isDraggingSeek && dur > 0.0) {
+        int knobX = seekBar.GetX() + (int)(seekBar.GetW() * seekBar.GetProgress());
+        int tipW = 92;
+        int tipH = 30;
+        int tipX = std::clamp(knobX - tipW / 2, Layout::MARGIN, Layout::SCREEN_W - Layout::MARGIN - tipW);
+        int tipY = SEEK_BAR_Y - 40;
+        UI::DrawRoundedRect(renderer, tipX, tipY, tipW, tipH, 8, {28, 28, 44, 240});
+        UI::DrawRoundedRectOutline(renderer, tipX, tipY, tipW, tipH, 8, Colors::DANGO_PINK);
+        UI::DrawTextCentered(renderer, app->GetFontTiny(), StringUtils::FormatTime(pos),
+                             {tipX, tipY, tipW, tipH}, Colors::TEXT_PRIMARY);
+    }
+
     // Action button hints below seek bar
-    int hintY = bottomY + 68;
+    int hintY = bottomY + 80;
 
     // (A) Play / Pause
     const char* playPauseText = MediaPlayer::Instance().IsPaused() ? "Reproducir" : "Pausar";
@@ -458,31 +526,29 @@ void PlayerOverlay::RenderTrackModal(SDL_Renderer* renderer) {
     UI::DrawText(renderer, app->GetFont(), title, modalX + 30, modalY + 24, Colors::DANGO_CREAM, false, false);
     UI::DrawDivider(renderer, modalX + 30, modalY + 64, modalW - 60);
 
-    // Track Items
+    // Track Items (max 4 visible rows at a time, scrolled to follow selection)
     const auto& meta = MediaPlayer::Instance().GetMetadata();
     int startY = modalY + 80;
     int itemH = 44;
+    int maxVisible = 4;
 
-    if (modalTrackType == TrackType::Audio) {
-        for (int i = 0; i < (int)meta.audioTracks.size(); i++) {
-            int y = startY + i * (itemH + 6);
-            bool isSel = (i == modalSelectedIndex);
+    int totalRows = (modalTrackType == TrackType::Audio)
+                    ? (int)meta.audioTracks.size()
+                    : (int)meta.subtitleTracks.size() + 1;
 
-            if (isSel) {
-                UI::DrawRoundedRect(renderer, modalX + 30, y, modalW - 60, itemH, 8, Colors::BG_SELECTED);
-                UI::DrawRoundedRect(renderer, modalX + 30, y, 4, itemH, 2, Colors::DANGO_PINK);
-            }
-
-            std::string label = meta.audioTracks[i].language + "  •  " + meta.audioTracks[i].title;
-            if (meta.audioTracks[i].selected) label += " (Activa)";
-            UI::DrawText(renderer, app->GetFontSmall(), label, modalX + 48, y + 12,
-                         isSel ? Colors::TEXT_PRIMARY : Colors::TEXT_SECONDARY, false, false);
-        }
+    if (totalRows == 0) {
+        UI::DrawTextCentered(renderer, app->GetFontSmall(), "No hay pistas de audio disponibles",
+                             {modalX + 30, startY + 40, modalW - 60, 40}, Colors::TEXT_DISABLED);
     } else {
-        // Subtitles (Index 0 = Desactivado, followed by tracks)
-        int totalRows = (int)meta.subtitleTracks.size() + 1;
-        for (int i = 0; i < totalRows; i++) {
-            int y = startY + i * (itemH + 6);
+        int scrollOff = 0;
+        if (modalSelectedIndex >= maxVisible) {
+            scrollOff = modalSelectedIndex - maxVisible + 1;
+        }
+        int visibleEnd = std::min(totalRows, scrollOff + maxVisible);
+
+        for (int i = scrollOff; i < visibleEnd; i++) {
+            int row = i - scrollOff;
+            int y = startY + row * (itemH + 8);
             bool isSel = (i == modalSelectedIndex);
 
             if (isSel) {
@@ -490,8 +556,20 @@ void PlayerOverlay::RenderTrackModal(SDL_Renderer* renderer) {
                 UI::DrawRoundedRect(renderer, modalX + 30, y, 4, itemH, 2, Colors::DANGO_PINK);
             }
 
-            std::string label = (i == 0) ? "Desactivados" : (meta.subtitleTracks[i - 1].language + "  •  " + meta.subtitleTracks[i - 1].title);
-            UI::DrawText(renderer, app->GetFontSmall(), label, modalX + 48, y + 12,
+            std::string label;
+            if (modalTrackType == TrackType::Audio) {
+                label = meta.audioTracks[i].language + "  •  " + meta.audioTracks[i].title;
+                if (meta.audioTracks[i].selected) label += " (Activa)";
+            } else {
+                if (i == 0) {
+                    label = "Desactivados";
+                } else {
+                    const auto& sub = meta.subtitleTracks[i - 1];
+                    label = sub.language + "  •  " + sub.title;
+                    if (sub.selected) label += " (Activa)";
+                }
+            }
+            UI::DrawText(renderer, app->GetFontSmall(), StringUtils::Truncate(label, 38), modalX + 48, y + 12,
                          isSel ? Colors::TEXT_PRIMARY : Colors::TEXT_SECONDARY, false, false);
         }
     }

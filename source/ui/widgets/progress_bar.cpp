@@ -27,13 +27,20 @@ void ProgressBar::SetColors(SDL_Color bg, SDL_Color fill, SDL_Color knob) {
     knobColor = knob;
 }
 
+bool ProgressBar::ContainsPoint(int touchX, int touchY, int padX, int padY) const {
+    return (touchX >= x - padX && touchX <= x + w + padX &&
+            touchY >= y - padY && touchY <= y + h + padY);
+}
+
+void ProgressBar::UpdateFromX(int touchX) {
+    if (w <= 0) return;
+    float newProg = (float)(touchX - x) / (float)w;
+    SetProgress(newProg);
+}
+
 bool ProgressBar::HandleTouch(int touchX, int touchY) {
-    // Expand touch target area slightly vertically for comfort
-    int hitPadY = 16;
-    if (touchX >= x && touchX <= x + w &&
-        touchY >= y - hitPadY && touchY <= y + h + hitPadY) {
-        float newProg = (float)(touchX - x) / (float)w;
-        SetProgress(newProg);
+    if (ContainsPoint(touchX, touchY, 16, 22)) {
+        UpdateFromX(touchX);
         return true;
     }
     return false;
@@ -57,7 +64,11 @@ void ProgressBar::Render(SDL_Renderer* renderer) {
     if (showKnob) {
         int knobX = x + (int)(w * progress);
         int knobY = y + h / 2;
-        int knobRadius = h + 2;
+        if (isDragging) {
+            filledCircleRGBA(renderer, (Sint16)knobX, (Sint16)knobY, (Sint16)(h + 9),
+                             fillColor.r, fillColor.g, fillColor.b, 110);
+        }
+        int knobRadius = isDragging ? (h + 4) : (h + 1);
         filledCircleRGBA(renderer, (Sint16)knobX, (Sint16)knobY, (Sint16)knobRadius,
                          knobColor.r, knobColor.g, knobColor.b, knobColor.a);
     }

@@ -194,22 +194,33 @@ void App::Run() {
                     backTriggered = true;
                 }
             } else if (event.type == SDL_MOUSEBUTTONDOWN) {
-                TouchEvent touch{TouchEvent::Down, event.button.x, event.button.y, 0};
-                if (!screenStack.empty()) {
-                    screenStack.back()->HandleTouch(touch);
+                if (event.button.which != SDL_TOUCH_MOUSEID) {
+                    TouchEvent touch{TouchEvent::Down, event.button.x, event.button.y, 0};
+                    if (!screenStack.empty()) {
+                        screenStack.back()->HandleTouch(touch);
+                    }
                 }
             } else if (event.type == SDL_MOUSEBUTTONUP) {
-                TouchEvent touch{TouchEvent::Up, event.button.x, event.button.y, 0};
-                if (!screenStack.empty()) {
-                    screenStack.back()->HandleTouch(touch);
+                if (event.button.which != SDL_TOUCH_MOUSEID) {
+                    TouchEvent touch{TouchEvent::Up, event.button.x, event.button.y, 0};
+                    if (!screenStack.empty()) {
+                        screenStack.back()->HandleTouch(touch);
+                    }
                 }
             } else if (event.type == SDL_MOUSEMOTION) {
-                TouchEvent touch{TouchEvent::Motion, event.motion.x, event.motion.y, 0};
-                if (!screenStack.empty()) {
-                    screenStack.back()->HandleTouch(touch);
+                if (event.motion.which != SDL_TOUCH_MOUSEID) {
+                    TouchEvent touch{TouchEvent::Motion, event.motion.x, event.motion.y, 0};
+                    if (!screenStack.empty()) {
+                        screenStack.back()->HandleTouch(touch);
+                    }
                 }
             } else if (event.type == SDL_FINGERDOWN) {
                 TouchEvent touch{TouchEvent::Down, (int)(event.tfinger.x * SCREEN_W), (int)(event.tfinger.y * SCREEN_H), (int)event.tfinger.fingerId};
+                if (!screenStack.empty()) {
+                    screenStack.back()->HandleTouch(touch);
+                }
+            } else if (event.type == SDL_FINGERMOTION) {
+                TouchEvent touch{TouchEvent::Motion, (int)(event.tfinger.x * SCREEN_W), (int)(event.tfinger.y * SCREEN_H), (int)event.tfinger.fingerId};
                 if (!screenStack.empty()) {
                     screenStack.back()->HandleTouch(touch);
                 }
@@ -272,10 +283,9 @@ void App::Run() {
         SDL_RenderClear(renderer);
 
         if (bgTexture) {
-            // Draw softened cosmic background texture
+            // Draw cosmic background texture, softly veiled in menus so UI stays crisp and readable
             SDL_RenderCopy(renderer, bgTexture, nullptr, nullptr);
-            // Delicate translucent dark veil for crisp contrast without saturating
-            UI::DrawRect(renderer, 0, 0, SCREEN_W, SCREEN_H, {10, 8, 18, 70});
+            UI::DrawRect(renderer, 0, 0, SCREEN_W, SCREEN_H, {10, 8, 18, 145});
         }
 
         if (!screenStack.empty()) {

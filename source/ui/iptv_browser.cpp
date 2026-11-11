@@ -5,6 +5,7 @@
 #include "ui/iptv_browser.h"
 #include "ui/player_screen.h"
 #include "ui/file_browser.h"
+#include "ui/history_screen.h"
 #include "ui/settings_screen.h"
 #include "media/favorites_manager.h"
 #include "network/http_client.h"
@@ -300,9 +301,7 @@ void IPTVBrowser::HandleSidebarInput(u64 kDown) {
                 focusZone = FocusZone::Shelf;
                 break;
             case SidebarItem::Favorites:
-                // Filter to favorites or cycle group
-                CycleGroup(+1);
-                focusZone = FocusZone::Shelf;
+                app->PushScreen(std::make_unique<HistoryScreen>(app, 1));
                 break;
             case SidebarItem::Search:
                 PromptSearch();
@@ -430,6 +429,35 @@ void IPTVBrowser::HandlePlaylistsInput(u64 kDown) {
 // ============================================================================
 
 void IPTVBrowser::HandleTouch(const TouchEvent& touch) {
+    // Active horizontal shelf drag capture (even if finger drifts outside SHELF_Y vertically)
+    if (isDraggingShelf && (touch.type == TouchEvent::Motion || touch.type == TouchEvent::Up)) {
+        if (touch.type == TouchEvent::Motion) {
+            int deltaX = touch.x - dragStartX;
+            currentScrollX = dragStartScrollX - deltaX;
+            if (currentScrollX < 0) currentScrollX = 0;
+        } else {
+            isDraggingShelf = false;
+            int deltaX = touch.x - dragStartX;
+            if (std::abs(deltaX) < 16 && touch.x >= SIDEBAR_W) {
+                int shelfStartX = SIDEBAR_W + 20;
+                int total = (int)displayedChannels.size();
+                for (int i = 0; i < total; i++) {
+                    int cardX = (int)(shelfStartX + i * (POSTER_W + POSTER_GAP) - currentScrollX);
+                    if (touch.x >= cardX && touch.x <= cardX + POSTER_W) {
+                        if (channelIndex == i) {
+                            HandleItemClick(displayedChannels[i]);
+                        } else {
+                            channelIndex = i;
+                            focusZone = FocusZone::Shelf;
+                        }
+                        return;
+                    }
+                }
+            }
+        }
+        return;
+    }
+
     // Touch on Sidebar Rail (X: 0 to SIDEBAR_W)
     if (touch.x < SIDEBAR_W) {
         if (touch.type != TouchEvent::Down) return;
@@ -445,7 +473,7 @@ void IPTVBrowser::HandleTouch(const TouchEvent& touch) {
                     return;
                 }
                 else if (i == 1) focusZone = FocusZone::Shelf;
-                else if (i == 2) { CycleGroup(+1); focusZone = FocusZone::Shelf; }
+                else if (i == 2) app->PushScreen(std::make_unique<HistoryScreen>(app, 1));
                 else if (i == 3) { PromptSearch(); focusZone = FocusZone::Shelf; }
                 else if (i == 4) app->PushScreen(std::make_unique<SettingsScreen>(app));
                 return;
@@ -473,37 +501,11 @@ void IPTVBrowser::HandleTouch(const TouchEvent& touch) {
         return;
     }
 
-    // Touch on Horizontal Carousel Shelf (Y: SHELF_Y to SHELF_Y + SHELF_H)
-    if (touch.y >= SHELF_Y && touch.y <= SHELF_Y + SHELF_H) {
-        if (touch.type == TouchEvent::Down) {
-            isDraggingShelf = true;
-            dragStartX = touch.x;
-            dragStartScrollX = currentScrollX;
-        } else if (touch.type == TouchEvent::Motion && isDraggingShelf) {
-            int deltaX = touch.x - dragStartX;
-            currentScrollX = dragStartScrollX - deltaX;
-            if (currentScrollX < 0) currentScrollX = 0;
-        } else if (touch.type == TouchEvent::Up && isDraggingShelf) {
-            isDraggingShelf = false;
-            int deltaX = touch.x - dragStartX;
-            if (std::abs(deltaX) < 16) {
-                // Treated as a tap on a poster card
-                int shelfStartX = SIDEBAR_W + 20;
-                int total = (int)displayedChannels.size();
-                for (int i = 0; i < total; i++) {
-                    int cardX = (int)(shelfStartX + i * (POSTER_W + POSTER_GAP) - currentScrollX);
-                    if (touch.x >= cardX && touch.x <= cardX + POSTER_W) {
-                        if (channelIndex == i) {
-                            HandleItemClick(displayedChannels[i]);
-                        } else {
-                            channelIndex = i;
-                            focusZone = FocusZone::Shelf;
-                        }
-                        return;
-                    }
-                }
-            }
-        }
+    // Touch down on Horizontal Carousel Shelf (Y: SHELF_Y to SHELF_Y + SHELF_H)
+    if (touch.type == TouchEvent::Down && touch.y >= SHELF_Y && touch.y <= SHELF_Y + SHELF_H) {
+        isDraggingShelf = true;
+        dragStartX = touch.x;
+        dragStartScrollX = currentScrollX;
     }
 }
 
@@ -536,8 +538,9 @@ void IPTVBrowser::Update(float dt) {
 // ============================================================================
 
 void IPTVBrowser::Render(SDL_Renderer* renderer) {
-    RenderSidebar(renderer);
+    // Draw main shelf content first (strictly clipped right of sidebar), then draw sidebar on top
     RenderShelfView(renderer);
+    RenderSidebar(renderer);
     toast.Render(renderer, app->GetFontSmall());
 }
 
@@ -548,7 +551,7 @@ void IPTVBrowser::Render(SDL_Renderer* renderer) {
 void IPTVBrowser::RenderSidebar(SDL_Renderer* renderer) {
     // Sidebar background panel (soft translucent dark veil)
     UI::DrawRect(renderer, 0, 0, SIDEBAR_W, Layout::SCREEN_H, {20, 20, 34, 215});
-    UI::DrawDivider(renderer, SIDEBAR_W - 1, 0, 1); // Vertical separator
+    UI::DrawRect(renderer, SIDEBAR_W - 1, 0, 1, Layout::SCREEN_H, Colors::DIVIDER); // Vertical separator
 
     // Logo / Brand Icon at top (Switch Joy-Con logo)
     UI::DrawRoundedRect(renderer, 24, 20, 48, 48, 12, Colors::BG_SELECTED);
@@ -647,21 +650,26 @@ void IPTVBrowser::RenderShelfView(SDL_Renderer* renderer) {
         UI::DrawText(renderer, app->GetFont(), "No se encontraron elementos en esta seccion",
                      Layout::SCREEN_W / 2 + 30, 300, Colors::TEXT_DISABLED, true, false);
     } else {
+        // Strictly clip horizontal shelf strictly to the right of the sidebar rail
+        SDL_Rect shelfClip = { SIDEBAR_W + 2, 76, Layout::SCREEN_W - (SIDEBAR_W + 2), 404 };
+        SDL_RenderSetClipRect(renderer, &shelfClip);
+
         for (int i = 0; i < total; i++) {
             int cardX = (int)(shelfStartX + i * (POSTER_W + POSTER_GAP) - currentScrollX);
-
-            // Virtualization culling: skip posters strictly outside the screen
-            if (cardX + POSTER_W < shelfStartX - 40 || cardX > Layout::SCREEN_W + 40) {
-                continue;
-            }
-
             bool isFocused = (focusZone == FocusZone::Shelf && i == channelIndex);
             int cardW = isFocused ? POSTER_FOCUSED_W : POSTER_W;
             int cardH = isFocused ? POSTER_FOCUSED_H : POSTER_H;
             int cardY = isFocused ? (shelfY - (POSTER_FOCUSED_H - POSTER_H) / 2) : shelfY;
 
+            // Virtualization culling: skip posters strictly outside the clipped viewport
+            if (cardX + cardW + 8 < SIDEBAR_W || cardX > Layout::SCREEN_W + 40) {
+                continue;
+            }
+
             RenderPosterCard(renderer, displayedChannels[i], i, cardX, cardY, cardW, cardH, isFocused);
         }
+
+        SDL_RenderSetClipRect(renderer, nullptr);
     }
 
     // ------------------------------------------------------------------------

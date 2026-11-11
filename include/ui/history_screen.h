@@ -13,7 +13,7 @@
 
 class HistoryScreen : public Screen {
 public:
-    explicit HistoryScreen(App* app);
+    explicit HistoryScreen(App* app, int initialTab = 0);
 
     void OnEnter() override;
     void HandleInput(u64 kDown, u64 kHeld) override;
