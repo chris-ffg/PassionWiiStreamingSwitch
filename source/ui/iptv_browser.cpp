@@ -165,7 +165,7 @@ void IPTVBrowser::RenderLoadingFrame(const std::string& message) {
     SDL_Texture* bg = app->GetBackgroundTexture();
     if (bg) {
         SDL_RenderCopy(renderer, bg, nullptr, nullptr);
-        UI::DrawRect(renderer, 0, 0, Layout::SCREEN_W, Layout::SCREEN_H, {10, 8, 18, 70});
+        UI::DrawRect(renderer, 0, 0, Layout::SCREEN_W, Layout::SCREEN_H, {10, 8, 18, 145});
     }
 
     Render(renderer);
