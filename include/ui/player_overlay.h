@@ -8,6 +8,7 @@
 #include "ui/widgets/toast.h"
 #include "media/player.h"
 #include "ui/screen.h"
+#include "ui/ui_common.h"
 #include <SDL2/SDL.h>
 #include <string>
 
