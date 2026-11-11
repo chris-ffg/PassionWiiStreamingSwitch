@@ -49,6 +49,7 @@ public:
     int GetVolume() const { return volume; }
 
     /// Tracks
+    void RefreshTracks();
     void CycleAudioTrack();
     void CycleSubtitleTrack();
     void SetAudioTrack(int id);

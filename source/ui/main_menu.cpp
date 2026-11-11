@@ -20,7 +20,7 @@
 
 MainMenu::MainMenu(App* app) : Screen(app) {
     items = {
-        {"PassionWii Streaming",   "Catalogo de Peliculas, Series, Animes y Doramas"},
+        {"PassionWiiStreaming",    "Catalogo de Peliculas, Series, Animes y Doramas"},
         {"Archivos Locales",       "Reproducir videos desde la tarjeta SD o USB"},
         {"Historial y Favoritos",  "Contenido reciente y canales favoritos"},
         {"Configuracion",          "Ajustes de la aplicacion y reproductor"},

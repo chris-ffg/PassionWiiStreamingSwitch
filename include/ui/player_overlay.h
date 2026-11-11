@@ -35,6 +35,7 @@ private:
     void RenderBottomBar(SDL_Renderer* renderer);
     void RenderOSD(SDL_Renderer* renderer);
     void RenderTrackModal(SDL_Renderer* renderer);
+    void OpenTrackModal(TrackType type);
     void ApplyModalSelection();
 
     App* app;

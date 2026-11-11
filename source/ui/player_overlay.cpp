@@ -69,14 +69,44 @@ void PlayerOverlay::Update(float dt) {
     seekBar.SetDragging(isDraggingSeek);
 }
 
+void PlayerOverlay::OpenTrackModal(TrackType type) {
+    auto& player = MediaPlayer::Instance();
+    player.RefreshTracks();
+    const auto& meta = player.GetMetadata();
+
+    modalTrackType = type;
+    modalSelectedIndex = 0;
+
+    if (type == TrackType::Audio) {
+        for (int i = 0; i < (int)meta.audioTracks.size(); i++) {
+            if (meta.audioTracks[i].selected) {
+                modalSelectedIndex = i;
+                break;
+            }
+        }
+    } else {
+        for (int i = 0; i < (int)meta.subtitleTracks.size(); i++) {
+            if (meta.subtitleTracks[i].selected) {
+                modalSelectedIndex = i + 1;
+                break;
+            }
+        }
+    }
+
+    modalOpen = true;
+    autoHideTimer = AUTO_HIDE_DELAY;
+}
+
 void PlayerOverlay::ApplyModalSelection() {
     auto& player = MediaPlayer::Instance();
     const auto& meta = player.GetMetadata();
 
     if (modalTrackType == TrackType::Audio) {
         if (modalSelectedIndex >= 0 && modalSelectedIndex < (int)meta.audioTracks.size()) {
-            player.SetAudioTrack(meta.audioTracks[modalSelectedIndex].id);
-            ShowOSD("Audio: " + meta.audioTracks[modalSelectedIndex].language);
+            const auto& aud = meta.audioTracks[modalSelectedIndex];
+            player.SetAudioTrack(aud.id);
+            std::string label = !aud.language.empty() ? aud.language : aud.title;
+            ShowOSD("Audio: " + (label.empty() ? ("#" + std::to_string(aud.id)) : label));
         }
     } else {
         if (modalSelectedIndex == 0) {
@@ -85,8 +115,10 @@ void PlayerOverlay::ApplyModalSelection() {
         } else {
             int subIdx = modalSelectedIndex - 1;
             if (subIdx >= 0 && subIdx < (int)meta.subtitleTracks.size()) {
-                player.SetSubtitleTrack(meta.subtitleTracks[subIdx].id);
-                ShowOSD("Subtitulos: " + meta.subtitleTracks[subIdx].language);
+                const auto& sub = meta.subtitleTracks[subIdx];
+                player.SetSubtitleTrack(sub.id);
+                std::string label = !sub.title.empty() ? sub.title : sub.language;
+                ShowOSD("Subtitulos: " + (label.empty() ? ("#" + std::to_string(sub.id)) : label));
             }
         }
     }
@@ -206,16 +238,12 @@ void PlayerOverlay::HandleInput(u64 kDown, u64 kHeld) {
 
     // Audio Track Modal [X]
     if (kDown & HidNpadButton_X) {
-        modalTrackType = TrackType::Audio;
-        modalSelectedIndex = 0;
-        modalOpen = true;
+        OpenTrackModal(TrackType::Audio);
     }
 
     // Subtitle Track Modal [Y]
     if (kDown & HidNpadButton_Y) {
-        modalTrackType = TrackType::Subtitle;
-        modalSelectedIndex = 0;
-        modalOpen = true;
+        OpenTrackModal(TrackType::Subtitle);
     }
 }
 
@@ -329,16 +357,12 @@ bool PlayerOverlay::HandleTouch(const TouchEvent& touch) {
         }
         // Audio modal
         if (touch.x >= Layout::MARGIN + 155 && touch.x <= Layout::MARGIN + 265) {
-            modalTrackType = TrackType::Audio;
-            modalSelectedIndex = 0;
-            modalOpen = true;
+            OpenTrackModal(TrackType::Audio);
             return true;
         }
         // Subtitles modal
         if (touch.x >= Layout::MARGIN + 268 && touch.x <= Layout::MARGIN + 390) {
-            modalTrackType = TrackType::Subtitle;
-            modalSelectedIndex = 0;
-            modalOpen = true;
+            OpenTrackModal(TrackType::Subtitle);
             return true;
         }
         // Rotation button
@@ -558,14 +582,19 @@ void PlayerOverlay::RenderTrackModal(SDL_Renderer* renderer) {
 
             std::string label;
             if (modalTrackType == TrackType::Audio) {
-                label = meta.audioTracks[i].language + "  •  " + meta.audioTracks[i].title;
-                if (meta.audioTracks[i].selected) label += " (Activa)";
+                const auto& aud = meta.audioTracks[i];
+                label = aud.title.empty() ? aud.language : (aud.language + "  •  " + aud.title);
+                if (aud.selected) label += " (Activa)";
             } else {
                 if (i == 0) {
-                    label = "Desactivados";
+                    bool anySubActive = false;
+                    for (const auto& s : meta.subtitleTracks) {
+                        if (s.selected) { anySubActive = true; break; }
+                    }
+                    label = anySubActive ? "Desactivados" : "Desactivados (Activa)";
                 } else {
                     const auto& sub = meta.subtitleTracks[i - 1];
-                    label = sub.language + "  •  " + sub.title;
+                    label = sub.title.empty() ? sub.language : (sub.language + "  •  " + sub.title);
                     if (sub.selected) label += " (Activa)";
                 }
             }

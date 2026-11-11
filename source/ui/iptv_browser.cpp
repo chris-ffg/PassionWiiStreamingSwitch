@@ -619,6 +619,9 @@ void IPTVBrowser::RenderShelfView(SDL_Renderer* renderer) {
 
     // Title / Breadcrumbs
     std::string plTitle = pl.name;
+    if (!isSubFolder && StringUtils::ToLower(plTitle).find(".m3u") != std::string::npos) {
+        plTitle = "PassionWiiStreaming";
+    }
     if (isSubFolder && !folderTitle.empty()) {
         UI::DrawIconFolder(renderer, headerX + 120, headerY + 21, 22, Colors::DANGO_ORANGE);
         UI::DrawText(renderer, app->GetFont(), StringUtils::Truncate(folderTitle, 36),
@@ -693,17 +696,13 @@ void IPTVBrowser::RenderShelfView(SDL_Renderer* renderer) {
                          headerX + 38, detailY + 12, Colors::TEXT_PRIMARY, false, false);
         }
 
-        // Item Subtitle / Category
+        // Item Subtitle / Category (keep raw stream/m3u URLs hidden)
         std::string subInfo = isContainer ? ("[Carpeta / Categoria] " + ch.groupTitle) : ("[Video] " + ch.groupTitle);
         UI::DrawText(renderer, app->GetFontSmall(), subInfo,
-                     headerX, detailY + 46, Colors::DANGO_PINK, false, false);
-
-        // URL / Source Preview
-        UI::DrawText(renderer, app->GetFontTiny(), StringUtils::Truncate(ch.url, 80),
-                     headerX, detailY + 70, Colors::TEXT_DISABLED, false, false);
+                     headerX, detailY + 48, Colors::DANGO_PINK, false, false);
 
         // Controller Action Buttons
-        int hintY = detailY + 98;
+        int hintY = detailY + 86;
 
         // [A] Button
         UI::DrawRoundedRect(renderer, headerX, hintY, 26, 26, 6, Colors::DANGO_PINK);
@@ -887,7 +886,7 @@ void IPTVBrowser::RenderPlaylistsView(SDL_Renderer* renderer) {
             UI::DrawRoundedRect(renderer, Layout::MARGIN + 16, y + 18, 40, 38, 6, Colors::DANGO_GREEN);
             UI::DrawText(renderer, app->GetFontTiny(), entry.isRemote ? "NET" : "M3U", Layout::MARGIN + 36, y + 29, Colors::BG_DARK, true, false);
             UI::DrawText(renderer, app->GetFont(), entry.name, Layout::MARGIN + 68, y + 14, Colors::TEXT_PRIMARY, false, false);
-            std::string sub = StringUtils::Truncate(entry.pathOrUrl, 60);
+            std::string sub = entry.isRemote ? "Lista remota sincronizada" : StringUtils::Truncate(entry.pathOrUrl, 60);
             UI::DrawText(renderer, app->GetFontTiny(), sub, Layout::MARGIN + 68, y + 44, Colors::TEXT_DISABLED, false, false);
         }
     }

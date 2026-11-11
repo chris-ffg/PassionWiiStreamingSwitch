@@ -21,8 +21,63 @@
 #include <map>
 #include <fstream>
 #include <sstream>
+#include <sys/stat.h>
 
 static const char* RESUME_FILE = "sdmc:/switch/PassionWiiStreaming/resume_cache.txt";
+static const char* MPV_CONFIG_DIR = "sdmc:/switch/PassionWiiStreaming";
+static const char* MPV_FONTS_DIR = "sdmc:/switch/PassionWiiStreaming/fonts";
+
+static bool CopyAssetFileIfNeeded(const char* srcPath, const char* dstPath) {
+    struct stat srcSt{};
+    if (stat(srcPath, &srcSt) != 0 || srcSt.st_size <= 0) {
+        return false;
+    }
+
+    struct stat dstSt{};
+    if (stat(dstPath, &dstSt) == 0 && dstSt.st_size == srcSt.st_size) {
+        return true;
+    }
+
+    FILE* in = fopen(srcPath, "rb");
+    if (!in) return false;
+
+    FILE* out = fopen(dstPath, "wb");
+    if (!out) {
+        fclose(in);
+        return false;
+    }
+
+    char buf[16384];
+    size_t n = 0;
+    while ((n = fread(buf, 1, sizeof(buf), in)) > 0) {
+        if (fwrite(buf, 1, n, out) != n) {
+            fclose(out);
+            fclose(in);
+            return false;
+        }
+    }
+
+    fclose(out);
+    fclose(in);
+    return true;
+}
+
+static void EnsureSubtitleFontSetup() {
+    mkdir("sdmc:/switch", 0777);
+    mkdir(MPV_CONFIG_DIR, 0777);
+    mkdir(MPV_FONTS_DIR, 0777);
+
+    const char* srcFont = "romfs:/fonts/font.ttf";
+    struct stat st{};
+    if (stat(srcFont, &st) != 0) {
+        srcFont = "romfs:/fonts/NotoSans-Regular.ttf";
+    }
+
+    bool okSub = CopyAssetFileIfNeeded(srcFont, "sdmc:/switch/PassionWiiStreaming/subfont.ttf");
+    bool okDir = CopyAssetFileIfNeeded(srcFont, "sdmc:/switch/PassionWiiStreaming/fonts/NotoSans-Regular.ttf");
+    Logger::Info("MediaPlayer: Subtitle font provisioning (%s): subfont=%d fontsDir=%d",
+                 srcFont, okSub ? 1 : 0, okDir ? 1 : 0);
+}
 
 static void* get_proc_address_mpv(void* ctx, const char* name) {
     (void)ctx;
@@ -48,11 +103,21 @@ bool MediaPlayer::Initialize() {
     Logger::Info("MediaPlayer: Initializing libmpv with OpenGL render context...");
     std::setlocale(LC_NUMERIC, "C");
 
+    // Provision bundled TrueType subtitle font to SD so libass on Horizon OS always has a font
+    EnsureSubtitleFontSetup();
+
     mpv = mpv_create();
     if (!mpv) {
         Logger::Error("MediaPlayer: Failed to create mpv instance!");
         return false;
     }
+
+    // Config & font paths (required for libass/mpv subtitle rendering without system fontconfig)
+    mpv_set_option_string(mpv, "config", "yes");
+    mpv_set_option_string(mpv, "config-dir", MPV_CONFIG_DIR);
+    mpv_set_option_string(mpv, "sub-fonts-dir", MPV_FONTS_DIR);
+    mpv_set_option_string(mpv, "osd-fonts-dir", MPV_FONTS_DIR);
+    mpv_set_option_string(mpv, "osd-level", "0");
 
     // Audio output: use native Nintendo Switch Horizon OS audio driver (ao_hos)
     mpv_set_option_string(mpv, "ao", "hos,null,");
@@ -80,11 +145,18 @@ bool MediaPlayer::Initialize() {
     mpv_set_option_string(mpv, "vd-lavc-skiploopfilter", "all");
     mpv_set_option_string(mpv, "vd-lavc-threads", "4");
 
-    // Audio & Subtitle configuration
+    // Audio & Subtitle configuration (libass needs explicit fonts + visibility on Switch)
     mpv_set_option_string(mpv, "sub-auto", "fuzzy");
     mpv_set_option_string(mpv, "audio-file-auto", "fuzzy");
-    mpv_set_option_string(mpv, "sub-font", "sans-serif");
+    mpv_set_option_string(mpv, "sub-font", "Noto Sans");
     mpv_set_option_string(mpv, "sub-font-size", "48");
+    mpv_set_option_string(mpv, "sub-color", "#FFFFFFFF");
+    mpv_set_option_string(mpv, "sub-border-size", "2.5");
+    mpv_set_option_string(mpv, "sub-border-color", "#FF000000");
+    mpv_set_option_string(mpv, "sub-shadow-offset", "1");
+    mpv_set_option_string(mpv, "sub-shadow-color", "0.0/0.0/0.0/0.5");
+    mpv_set_option_string(mpv, "sub-visibility", "yes");
+    mpv_set_option_string(mpv, "embeddedfonts", "yes");
 
     // Set initial volume
     int64_t initVol = volume;
@@ -100,6 +172,8 @@ bool MediaPlayer::Initialize() {
         mpv = nullptr;
         return false;
     }
+
+    mpv_observe_property(mpv, 1, "track-list/count", MPV_FORMAT_INT64);
 
     // Initialize libmpv OpenGL render context without advanced control to avoid deadlock
     mpv_opengl_init_params gl_init = { get_proc_address_mpv, nullptr };
@@ -202,9 +276,13 @@ bool MediaPlayer::Open(const std::string& path, const std::string& explicitTitle
 
     Logger::Info("MediaPlayer: Loading stream: %s (Title: %s, Rotation: %d)", safePath.c_str(), metadata.title.c_str(), currentRotation);
 
-    // Apply current rotation setting
+    // Apply current rotation setting and reset track selection cleanly for new file
     std::string rotStr = std::to_string(currentRotation);
     mpv_set_property_string(mpv, "video-rotate", rotStr.c_str());
+    mpv_set_property_string(mpv, "sid", "auto");
+    mpv_set_property_string(mpv, "aid", "auto");
+    int subVis = 1;
+    mpv_set_property(mpv, "sub-visibility", MPV_FORMAT_FLAG, &subVis);
 
     const char* cmd[] = {"loadfile", safePath.c_str(), "replace", nullptr};
     int res = mpv_command(mpv, cmd);
@@ -344,6 +422,10 @@ void MediaPlayer::SetVolume(int vol) {
     mpv_set_property(mpv, "volume", MPV_FORMAT_INT64, &v);
 }
 
+void MediaPlayer::RefreshTracks() {
+    ParseTracks();
+}
+
 void MediaPlayer::CycleAudioTrack() {
     if (!mpv) return;
     const char* cmd[] = {"cycle", "aid", nullptr};
@@ -367,8 +449,20 @@ void MediaPlayer::SetAudioTrack(int id) {
 
 void MediaPlayer::SetSubtitleTrack(int id) {
     if (!mpv) return;
-    int64_t trackId = id;
-    mpv_set_property(mpv, "sid", MPV_FORMAT_INT64, &trackId);
+    if (id <= 0) {
+        mpv_set_property_string(mpv, "sid", "no");
+        Logger::Info("MediaPlayer: Subtitles disabled");
+    } else {
+        int vis = 1;
+        mpv_set_property(mpv, "sub-visibility", MPV_FORMAT_FLAG, &vis);
+        int64_t trackId = id;
+        int err = mpv_set_property(mpv, "sid", MPV_FORMAT_INT64, &trackId);
+        if (err < 0) {
+            std::string idStr = std::to_string(id);
+            err = mpv_set_property_string(mpv, "sid", idStr.c_str());
+        }
+        Logger::Info("MediaPlayer: Subtitle track set to sid=%d (res=%d)", id, err);
+    }
     ParseTracks();
 }
 
@@ -521,6 +615,14 @@ void MediaPlayer::Update() {
 #ifdef __SWITCH__
                 appletSetMediaPlaybackState(!paused);
 #endif
+                break;
+            }
+
+            case MPV_EVENT_PROPERTY_CHANGE: {
+                mpv_event_property* prop = (mpv_event_property*)event->data;
+                if (prop && prop->name && strcmp(prop->name, "track-list/count") == 0) {
+                    ParseTracks();
+                }
                 break;
             }
 
