@@ -16,11 +16,9 @@
 - ⚡ **Rendimiento de Video Acelerado por Hardware**:
   - Motor multimedia basado en **libmpv** y **FFmpeg** con decodificación acelerada por hardware **NVDEC** sobre el procesador NVIDIA Tegra X1.
   - Reproducción continua sin cortes ni congelamientos.
-  - Manejo inteligente del estado de suspensión de Horizon OS: la consola no se suspende mientras reproduces contenido.
 
 - 🎨 **Interfaz y Personalización Temática**:
   - Fondo galáctico con estética cósmica oficial de PassionWii.
-  - Ícono nativo 256x256 optimizado para el Menú Home de Switch, forwarders (Sphaira) y hbmenu.
   - Menú lateral moderno con accesos directos rápidos a Inicio, Streaming, Favoritos, Búsqueda y Ajustes.
 
 - 📺 **Reproducción Local y USB**:
